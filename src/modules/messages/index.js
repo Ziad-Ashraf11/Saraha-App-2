@@ -1,0 +1,1 @@
+export {default as messagesRoutes} from "./messages.controller.js";

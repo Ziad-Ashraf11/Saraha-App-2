@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+config/dev.env
+uploads/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+config/dev.env
+config/*.env
