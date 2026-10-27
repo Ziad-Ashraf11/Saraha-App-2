@@ -34,6 +34,31 @@ export const sendVerificationEmail = async (email, code) => {
   return { delivered: true };
 };
 
+export const sendSecurityCodeEmail = async (email, code, purpose) => {
+  if (process.env.NODE_ENV === "test" || (process.env.NODE_ENV !== "production" && (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !MAIL_FROM))) {
+    if (process.env.NODE_ENV !== "test") console.info(`[DEV ONLY] ${purpose} code for ${email}: ${code}`);
+    return { delivered: false, developmentCode: code };
+  }
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !MAIL_FROM) {
+    throw new Error("Email delivery is not configured");
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  });
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to: email,
+    subject: "Your Saraha security code",
+    text: `Your code to ${purpose} is ${code}. It expires in 10 minutes.`,
+    html: `<p>Your code to ${purpose} is <strong>${code}</strong>.</p><p>It expires in 10 minutes.</p>`,
+  });
+  return { delivered: true };
+};
+
 export const sendPasswordResetEmail = async (email, resetToken) => {
   if (process.env.NODE_ENV === "test" || (process.env.NODE_ENV !== "production" && (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !MAIL_FROM))) {
     if (process.env.NODE_ENV !== "test") console.info(`[DEV ONLY] Password reset token for ${email}: ${resetToken}`);

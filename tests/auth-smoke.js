@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import mongoose from "mongoose";
+import UserModel from "../src/DB/models/user.model.js";
+import { DB_URI } from "../config/config.service.js";
 
 const baseUrl = process.env.API_URL || "http://localhost:3000";
 const email = `auth-smoke-${randomUUID()}@example.invalid`;
@@ -187,6 +190,182 @@ const loggedOutRefresh = await request("/api/v1/auth/refresh", {
 });
 assert.equal(loggedOutRefresh.status, 401, JSON.stringify(loggedOutRefresh.data));
 console.log("PASS logout revokes refresh token");
+
+const twoFactorEmail = `two-factor-${randomUUID()}@example.invalid`;
+const twoFactorRegistration = await request("/api/v1/auth/register", {
+  method: "POST",
+  body: {
+    firstName: "TwoFactor",
+    lastName: "Tester",
+    email: twoFactorEmail,
+    password: "TwoFactor123",
+  },
+});
+assert.equal(twoFactorRegistration.status, 201, JSON.stringify(twoFactorRegistration.data));
+const twoFactorVerification = await request("/api/v1/auth/verify-email", {
+  method: "POST",
+  body: {
+    email: twoFactorEmail,
+    code: twoFactorRegistration.data.data.developmentVerificationCode,
+  },
+});
+assert.equal(twoFactorVerification.status, 200, JSON.stringify(twoFactorVerification.data));
+const twoFactorInitialLogin = await request("/api/v1/auth/login", {
+  method: "POST",
+  body: { email: twoFactorEmail, password: "TwoFactor123" },
+});
+assert.equal(twoFactorInitialLogin.status, 200, JSON.stringify(twoFactorInitialLogin.data));
+const twoFactorAccessToken = twoFactorInitialLogin.data.data.accessToken;
+
+const unauthenticatedEnable = await request("/api/v1/auth/2fa/enable", { method: "POST" });
+assert.equal(unauthenticatedEnable.status, 401, JSON.stringify(unauthenticatedEnable.data));
+
+const setupRequest = await request("/api/v1/auth/2fa/enable", {
+  method: "POST",
+  token: twoFactorAccessToken,
+});
+assert.equal(setupRequest.status, 200, JSON.stringify(setupRequest.data));
+let setupCode = setupRequest.data.data.developmentVerificationCode;
+assert.match(setupCode, /^\d{6}$/);
+
+for (let attempt = 1; attempt <= 5; attempt += 1) {
+  const invalidSetupCode = await request("/api/v1/auth/2fa/enable/confirm", {
+    method: "POST",
+    token: twoFactorAccessToken,
+    body: { code: "000000" },
+  });
+  assert.equal(invalidSetupCode.status, 400, JSON.stringify(invalidSetupCode.data));
+}
+const exhaustedSetupCode = await request("/api/v1/auth/2fa/enable/confirm", {
+  method: "POST",
+  token: twoFactorAccessToken,
+  body: { code: setupCode },
+});
+assert.equal(exhaustedSetupCode.status, 400, JSON.stringify(exhaustedSetupCode.data));
+
+const replacementSetupRequest = await request("/api/v1/auth/2fa/enable", {
+  method: "POST",
+  token: twoFactorAccessToken,
+});
+assert.equal(replacementSetupRequest.status, 200, JSON.stringify(replacementSetupRequest.data));
+setupCode = replacementSetupRequest.data.data.developmentVerificationCode;
+
+const enabledTwoFactor = await request("/api/v1/auth/2fa/enable/confirm", {
+  method: "POST",
+  token: twoFactorAccessToken,
+  body: { code: setupCode },
+});
+assert.equal(enabledTwoFactor.status, 200, JSON.stringify(enabledTwoFactor.data));
+assert.equal(enabledTwoFactor.data.data.twoFactorEnabled, true);
+
+const duplicateEnable = await request("/api/v1/auth/2fa/enable", {
+  method: "POST",
+  token: twoFactorAccessToken,
+});
+assert.equal(duplicateEnable.status, 409, JSON.stringify(duplicateEnable.data));
+
+const twoFactorProfile = await request("/api/v1/users/me", { token: twoFactorAccessToken });
+assert.equal(twoFactorProfile.status, 200, JSON.stringify(twoFactorProfile.data));
+assert.equal(twoFactorProfile.data.data.twoFactorEnabled, true);
+console.log("PASS authenticated two-step setup, OTP validation, and enabled state");
+
+const loginChallenge = await request("/api/v1/auth/login", {
+  method: "POST",
+  body: { email: twoFactorEmail, password: "TwoFactor123" },
+});
+assert.equal(loginChallenge.status, 200, JSON.stringify(loginChallenge.data));
+assert.equal(loginChallenge.data.data.twoFactorVerificationRequired, true);
+assert.equal(loginChallenge.data.data.accessToken, undefined);
+assert.equal(loginChallenge.data.data.refreshToken, undefined);
+let loginCode = loginChallenge.data.data.developmentVerificationCode;
+assert.match(loginCode, /^\d{6}$/);
+
+const invalidLoginCodeShape = await request("/api/v1/auth/2fa/login/confirm", {
+  method: "POST",
+  body: { email: twoFactorEmail, code: "bad" },
+});
+assert.equal(invalidLoginCodeShape.status, 400, JSON.stringify(invalidLoginCodeShape.data));
+
+for (let attempt = 1; attempt <= 5; attempt += 1) {
+  const invalidLoginCode = await request("/api/v1/auth/2fa/login/confirm", {
+    method: "POST",
+    body: { email: twoFactorEmail, code: "000000" },
+  });
+  assert.equal(invalidLoginCode.status, 400, JSON.stringify(invalidLoginCode.data));
+}
+const exhaustedLoginCode = await request("/api/v1/auth/2fa/login/confirm", {
+  method: "POST",
+  body: { email: twoFactorEmail, code: loginCode },
+});
+assert.equal(exhaustedLoginCode.status, 400, JSON.stringify(exhaustedLoginCode.data));
+
+const replacementLoginChallenge = await request("/api/v1/auth/login", {
+  method: "POST",
+  body: { email: twoFactorEmail, password: "TwoFactor123" },
+});
+assert.equal(replacementLoginChallenge.status, 200, JSON.stringify(replacementLoginChallenge.data));
+loginCode = replacementLoginChallenge.data.data.developmentVerificationCode;
+
+const confirmedLogin = await request("/api/v1/auth/2fa/login/confirm", {
+  method: "POST",
+  body: { email: twoFactorEmail, code: loginCode },
+});
+assert.equal(confirmedLogin.status, 200, JSON.stringify(confirmedLogin.data));
+assert.ok(confirmedLogin.data.data.accessToken);
+assert.ok(confirmedLogin.data.data.refreshToken);
+
+const reusedLoginCode = await request("/api/v1/auth/2fa/login/confirm", {
+  method: "POST",
+  body: { email: twoFactorEmail, code: loginCode },
+});
+assert.equal(reusedLoginCode.status, 400, JSON.stringify(reusedLoginCode.data));
+console.log("PASS login requires a one-time email OTP before token issuance");
+
+const lockEmail = `login-lock-${randomUUID()}@example.invalid`;
+const lockRegistration = await request("/api/v1/auth/register", {
+  method: "POST",
+  body: { firstName: "Lock", lastName: "Tester", email: lockEmail, password: "LockTest123" },
+});
+assert.equal(lockRegistration.status, 201, JSON.stringify(lockRegistration.data));
+const lockVerification = await request("/api/v1/auth/verify-email", {
+  method: "POST",
+  body: { email: lockEmail, code: lockRegistration.data.data.developmentVerificationCode },
+});
+assert.equal(lockVerification.status, 200, JSON.stringify(lockVerification.data));
+
+for (let attempt = 1; attempt <= 5; attempt += 1) {
+  const failedLogin = await request("/api/v1/auth/login", {
+    method: "POST",
+    body: { email: lockEmail, password: "IncorrectPassword123" },
+  });
+  assert.equal(failedLogin.status, attempt === 5 ? 403 : 401, JSON.stringify(failedLogin.data));
+}
+const lockedLogin = await request("/api/v1/auth/login", {
+  method: "POST",
+  body: { email: lockEmail, password: "LockTest123" },
+});
+assert.equal(lockedLogin.status, 403, JSON.stringify(lockedLogin.data));
+assert.equal(lockedLogin.data.extra.retryAfterSeconds, 300);
+console.log("PASS five consecutive failures block correct-password login for five minutes");
+
+await mongoose.connect(DB_URI);
+try {
+  const lockedUser = await UserModel.findOne({ email: lockEmail }).select("+loginLockedUntil +loginFailedAttempts");
+  assert.ok(lockedUser?.loginLockedUntil, "Lock expiration must be persisted");
+  assert.ok(lockedUser.loginLockedUntil.getTime() >= Date.now() + 4 * 60 * 1000);
+  assert.ok(lockedUser.loginLockedUntil.getTime() <= Date.now() + 5 * 60 * 1000);
+  await UserModel.updateOne({ _id: lockedUser._id }, { $set: { loginLockedUntil: new Date(Date.now() - 1000) } });
+} finally {
+  await mongoose.disconnect();
+}
+
+const loginAfterExpiredLock = await request("/api/v1/auth/login", {
+  method: "POST",
+  body: { email: lockEmail, password: "LockTest123" },
+});
+assert.equal(loginAfterExpiredLock.status, 200, JSON.stringify(loginAfterExpiredLock.data));
+assert.ok(loginAfterExpiredLock.data.data.accessToken);
+console.log("PASS login works after the five-minute lock expires");
 
 const invalidGoogleLogin = await request("/api/v1/auth/google", {
   method: "POST",

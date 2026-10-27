@@ -22,6 +22,22 @@ export const validateLogin = (req, res, next) => {
 	next();
 };
 
+export const validateTwoFactorCode = (req, res, next) => {
+	if (typeof req.body?.code !== "string" || !/^\d{6}$/.test(req.body.code)) {
+		throw BadRequestException({ Message: "A valid six-digit code is required" });
+	}
+	next();
+};
+
+export const validateTwoFactorLogin = (req, res, next) => {
+	const { email, code } = req.body ?? {};
+	if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+		typeof code !== "string" || !/^\d{6}$/.test(code)) {
+		throw BadRequestException({ Message: "A valid email and six-digit code are required" });
+	}
+	next();
+};
+
 export const validateEmailVerification = (req, res, next) => {
 	const { email, code } = req.body ?? {};
 	if (typeof email !== "string" || typeof code !== "string" || !/^\d{6}$/.test(code)) {

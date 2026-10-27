@@ -32,6 +32,15 @@ const userSchema = new Schema(
     emailVerificationCodeHash: { type: String, select: false },
     emailVerificationExpiresAt: { type: Date, select: false },
     emailVerificationResendAt: { type: Date, select: false },
+    loginFailedAttempts: { type: Number, default: 0, select: false },
+    loginLockedUntil: { type: Date, select: false },
+    twoFactorEnabled: { type: Boolean, default: false },
+    twoFactorSetupCodeHash: { type: String, select: false },
+    twoFactorSetupCodeExpiresAt: { type: Date, select: false },
+    twoFactorSetupCodeAttempts: { type: Number, default: 0, select: false },
+    twoFactorLoginCodeHash: { type: String, select: false },
+    twoFactorLoginCodeExpiresAt: { type: Date, select: false },
+    twoFactorLoginCodeAttempts: { type: Number, default: 0, select: false },
     refreshTokenHash: { type: String, select: false },
     tokenVersion: { type: Number, default: 0 },
     passwordResetTokenHash: { type: String, select: false },
@@ -70,6 +79,14 @@ const userSchema = new Schema(
         delete ret.emailVerificationCodeHash;
         delete ret.emailVerificationExpiresAt;
         delete ret.emailVerificationResendAt;
+        delete ret.loginFailedAttempts;
+        delete ret.loginLockedUntil;
+        delete ret.twoFactorSetupCodeHash;
+        delete ret.twoFactorSetupCodeExpiresAt;
+        delete ret.twoFactorSetupCodeAttempts;
+        delete ret.twoFactorLoginCodeHash;
+        delete ret.twoFactorLoginCodeExpiresAt;
+        delete ret.twoFactorLoginCodeAttempts;
         delete ret.refreshTokenHash;
         delete ret.passwordResetTokenHash;
         delete ret.passwordResetExpiresAt;

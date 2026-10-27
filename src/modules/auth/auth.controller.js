@@ -1,6 +1,6 @@
 import {Router} from "express";
 import successResponse from "../../Utils/Response/success.response.js";
-import { forgotPassword, googleLogin, login, logout, refreshTokens, register, resendVerificationEmail, resetPassword, verifyEmail } from "./auth.service.js";
+import { confirmTwoFactorEnable, confirmTwoFactorLogin, enableTwoFactor, forgotPassword, googleLogin, login, logout, refreshTokens, register, resendVerificationEmail, resetPassword, verifyEmail } from "./auth.service.js";
 import { authenticate } from "../../middleware/auth.middleware.js";
 import {
 	validateEmailVerification,
@@ -11,6 +11,8 @@ import {
 	validateRegister,
 	validateResendVerification,
 	validateResetPassword,
+	validateTwoFactorCode,
+	validateTwoFactorLogin,
 } from "./auth.validiation.js";
 
 const router = Router();
@@ -22,7 +24,19 @@ router.post("/register", validateRegister, async (req, res) => {
 
 router.post("/login", validateLogin, async (req, res) => {
 	const result = await login(req.body);
-	return successResponse(res, 200, "Login successful", result);
+	return successResponse(res, 200, result.twoFactorVerificationRequired ? "Two-step verification code sent" : "Login successful", result);
+});
+
+router.post("/2fa/enable", authenticate, async (req, res) => {
+	return successResponse(res, 200, "Two-step verification code sent", await enableTwoFactor(req.user._id));
+});
+
+router.post("/2fa/enable/confirm", authenticate, validateTwoFactorCode, async (req, res) => {
+	return successResponse(res, 200, "Two-step verification enabled", await confirmTwoFactorEnable(req.user._id, req.body.code));
+});
+
+router.post("/2fa/login/confirm", validateTwoFactorLogin, async (req, res) => {
+	return successResponse(res, 200, "Login successful", await confirmTwoFactorLogin(req.body));
 });
 
 router.post("/verify-email", validateEmailVerification, async (req, res) => {
